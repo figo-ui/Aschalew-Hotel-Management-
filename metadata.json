@@ -1,0 +1,6 @@
+{
+  "name": "Aschalew International Hotel",
+  "description": "Modern full-stack property management system and guest portal for Aschalew International Hotel in Chiro, Ethiopia, connected with a Postgres database and Firebase Auth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

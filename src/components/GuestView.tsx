@@ -5,12 +5,15 @@ import {
   Calendar, Users, Coffee, BedDouble, UtensilsCrossed, Sparkles, 
   Trash2, Plus, ChevronRight, CheckCircle2, RefreshCw, LogOut, ShieldCheck,
   Compass, Heart, MapPin, Send, MessageSquare, Phone, Info, Eye, Image,
-  Filter, Check, Star, ShieldAlert, Award, Clock
+  Filter, Check, Star, ShieldAlert, Award, Clock, CreditCard, Smartphone, Lock, Receipt,
+  Mail, Bell, Settings, QrCode
 } from 'lucide-react';
 import { useLanguageTheme } from './LanguageThemeContext.tsx';
 import FAQSection from './FAQSection.tsx';
 import GoogleMapsSection from './GoogleMapsSection.tsx';
 import HeroSection from './HeroSection.tsx';
+import QRScanner from './QRScanner.tsx';
+import DynamicWelcomeHeader from './DynamicWelcomeHeader.tsx';
 
 interface GuestViewProps {
   token: string;
@@ -49,6 +52,10 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
     notes: '',
   });
 
+  // QR Scanner State
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+
   // Services Hub Form State
   const [serviceRequestForm, setServiceRequestForm] = useState({
     bookingId: 0,
@@ -62,26 +69,114 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [isSubmittingService, setIsSubmittingService] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Filters State for Rooms & Suites
   const [filterType, setFilterType] = useState<string>('all');
   const [filterPrice, setFilterPrice] = useState<string>('all');
   const [filterAmenities, setFilterAmenities] = useState<string[]>([]);
 
-  // Simulated WhatsApp chat states
+  // System Conversation Channel states (Database Synced)
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [chatMessages, setChatMessages] = useState([
-    {
-      id: '1',
-      sender: 'concierge',
-      text: 'Salam! Welcome to Aschalew International Concierge. 🌿 How can we assist you with your upcoming journey to Chiro (Asbe Teferi) today?',
-      time: '06:06 AM'
-    }
-  ]);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+
+  // Load and poll system messages
+  useEffect(() => {
+    let active = true;
+    const fetchSystemMessages = async () => {
+      try {
+        const res = await fetch('/api/system-messages');
+        if (res.ok && active) {
+          const data = await res.json();
+          setChatMessages(data);
+        }
+      } catch (err) {
+        console.warn('Unable to reach system messages service (server may be restarting):', err);
+      }
+    };
+
+    fetchSystemMessages();
+    const interval = setInterval(fetchSystemMessages, 4000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Simulated booking alerts
   const [serviceBookingSuccess, setServiceBookingSuccess] = useState<string | null>(null);
+
+  // Email Notification Preferences
+  const [prefEmailConfirmations, setPrefEmailConfirmations] = useState<boolean>(() => {
+    const saved = localStorage.getItem('pref_email_confirmations');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [prefEmailReminders, setPrefEmailReminders] = useState<boolean>(() => {
+    const saved = localStorage.getItem('pref_email_reminders');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [isUpdatingPrefs, setIsUpdatingPrefs] = useState<boolean>(false);
+  const [prefsSuccessMsg, setPrefsSuccessMsg] = useState<string | null>(null);
+
+  // Sync state reactively when updated elsewhere (e.g. from the three dots menu)
+  useEffect(() => {
+    const handlePrefsChange = () => {
+      const savedConfirmations = localStorage.getItem('pref_email_confirmations');
+      if (savedConfirmations !== null) {
+        setPrefEmailConfirmations(savedConfirmations === 'true');
+      }
+      const savedReminders = localStorage.getItem('pref_email_reminders');
+      if (savedReminders !== null) {
+        setPrefEmailReminders(savedReminders === 'true');
+      }
+    };
+    window.addEventListener('aschalew_prefs_updated', handlePrefsChange);
+    return () => window.removeEventListener('aschalew_prefs_updated', handlePrefsChange);
+  }, []);
+
+  const handleToggleConfirmations = (checked: boolean) => {
+    setPrefEmailConfirmations(checked);
+    localStorage.setItem('pref_email_confirmations', String(checked));
+    window.dispatchEvent(new Event('aschalew_prefs_updated'));
+    triggerPrefsFeedback();
+  };
+
+  const handleToggleReminders = (checked: boolean) => {
+    setPrefEmailReminders(checked);
+    localStorage.setItem('pref_email_reminders', String(checked));
+    window.dispatchEvent(new Event('aschalew_prefs_updated'));
+    triggerPrefsFeedback();
+  };
+
+  const triggerPrefsFeedback = () => {
+    setIsUpdatingPrefs(true);
+    setTimeout(() => {
+      setIsUpdatingPrefs(false);
+      setPrefsSuccessMsg('Notification preferences updated successfully!');
+      setTimeout(() => setPrefsSuccessMsg(null), 3000);
+    }, 600);
+  };
+
+  // Simulated Payment Checkout States
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<'method' | 'otp' | 'success'>('method');
+  const [selectedMethod, setSelectedMethod] = useState<'telebirr' | 'cbe' | 'chapa' | 'cash'>('telebirr');
+  const [paymentPhone, setPaymentPhone] = useState('0912345678');
+  const [paymentCard, setPaymentCard] = useState({ number: '', expiry: '', cvv: '', holder: '' });
+  const [paymentOtp, setPaymentOtp] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [transactionId, setTransactionId] = useState('');
+  const [checkoutData, setCheckoutData] = useState<{
+    room: Room;
+    checkIn: string;
+    checkOut: string;
+    guestsCount: number;
+    guestName: string;
+    guestEmail: string;
+    notes: string;
+  } | null>(null);
 
   // Prepopulate form if a room is pre-selected
   useEffect(() => {
@@ -129,14 +224,122 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
     }
   };
 
-  const handleBookingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const targetRoomId = selectedRoom?.id || parseInt(bookingForm.roomId);
-    if (!targetRoomId) {
-      setError('Please select a room first');
-      return;
+  const handleQRScan = (data: string) => {
+    setShowQRScanner(false);
+    setScanResult(data);
+    
+    // Process the QR code data
+    try {
+      // Examples of expected QR formats:
+      // "room-checkin:101"
+      // "restaurant:menu"
+      if (data.startsWith('room-checkin:')) {
+        const roomId = data.split(':')[1];
+        setSuccessMessage(`Successfully checked in to room ${roomId}! Your digital key is now active.`);
+        setActiveTab('reservations');
+      } else if (data === 'restaurant:menu') {
+        setActiveTab('dining');
+        setSuccessMessage('Welcome to the restaurant! Here is our digital menu.');
+      } else {
+        setError('Unrecognized QR code format.');
+      }
+    } catch (err) {
+      setError('Failed to process QR code.');
     }
     
+    setTimeout(() => {
+      setScanResult(null);
+      setSuccessMessage(null);
+      setError(null);
+    }, 5000);
+  };
+
+  const handleBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const targetRoomId = selectedRoom?.id || parseInt(bookingForm.roomId);
+    const targetRoom = rooms.find(r => r.id === targetRoomId);
+    if (!targetRoom) {
+      setError('Please select a suite first before proceeding.');
+      return;
+    }
+
+    if (!bookingForm.checkIn || !bookingForm.checkOut) {
+      setError('Please provide valid Check-In and Check-Out dates.');
+      return;
+    }
+
+    if (new Date(bookingForm.checkIn) >= new Date(bookingForm.checkOut)) {
+      setError('Check-Out date must be after Check-In date.');
+      return;
+    }
+
+    // Set checkout details
+    setCheckoutData({
+      room: targetRoom,
+      checkIn: bookingForm.checkIn,
+      checkOut: bookingForm.checkOut,
+      guestsCount: bookingForm.guestsCount,
+      guestName: bookingForm.guestName || user?.displayName || 'Chiro Traveler',
+      guestEmail: bookingForm.guestEmail || user?.email || '',
+      notes: bookingForm.notes
+    });
+
+    // Reset payment wizard states
+    setCheckoutStep('method');
+    setPaymentOtp('');
+    setOtpError(null);
+    setIsProcessingPayment(false);
+
+    // Open Checkout Modal
+    setShowCheckout(true);
+
+    // Close room details input modal if open
+    setSelectedRoom(null);
+  };
+
+  const handleInitiatePayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsProcessingPayment(true);
+    setOtpError(null);
+
+    // Simulate contacting secure gateway
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      if (selectedMethod === 'cash') {
+        // Direct cash/bank transfer options don't require SMS OTP
+        const randomTx = 'TXN-CASH-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        setTransactionId(randomTx);
+        setCheckoutStep('success');
+      } else {
+        // Telebirr, CBE Birr, Chapa need SMS authentication
+        setCheckoutStep('otp');
+      }
+    }, 1800);
+  };
+
+  const handleVerifyOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (paymentOtp !== '123456') {
+      setOtpError('Invalid verification code. Please enter the simulated PIN "123456" for demonstration.');
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    setOtpError(null);
+
+    // Simulate authorization
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      const randomTx = 'TXN-' + selectedMethod.toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      setTransactionId(randomTx);
+      setCheckoutStep('success');
+    }, 1500);
+  };
+
+  const handleCompleteBookingAndSave = async () => {
+    if (!checkoutData) return;
+
     setIsSubmittingBooking(true);
     setError(null);
 
@@ -148,31 +351,54 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          roomId: targetRoomId,
-          checkIn: bookingForm.checkIn,
-          checkOut: bookingForm.checkOut,
-          guestsCount: bookingForm.guestsCount,
-          guestName: bookingForm.guestName,
-          guestEmail: bookingForm.guestEmail,
-          notes: bookingForm.notes
+          roomId: checkoutData.room.id,
+          checkIn: checkoutData.checkIn,
+          checkOut: checkoutData.checkOut,
+          guestsCount: checkoutData.guestsCount,
+          guestName: checkoutData.guestName,
+          guestEmail: checkoutData.guestEmail,
+          notes: `${checkoutData.notes ? checkoutData.notes + ' ' : ''}[Paid via ${selectedMethod.toUpperCase()} Ref: ${transactionId}]`
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create booking. This room may be reserved during these dates.');
+        throw new Error('Failed to create booking on server. This room may be reserved during these dates.');
       }
 
       await response.json();
-      setSelectedRoom(null);
+
+      // Close checkout
+      setShowCheckout(false);
+      setCheckoutData(null);
+
+      // Reload bookings and switch tab
       setActiveTab('bookings');
       fetchBookings();
-      // Reset scroll
+
+      // Set booking success notification
+      setServiceBookingSuccess(`Congratulations! Your payment has been confirmed! Your stay at Aschalew International is secured.`);
+      setTimeout(() => setServiceBookingSuccess(null), 8000);
+
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       setError(err.message);
+      setShowCheckout(false);
     } finally {
       setIsSubmittingBooking(false);
     }
+  };
+
+  // Helper helper to calculate receipt details
+  const calculateTotal = (room: Room, checkIn: string, checkOut: string) => {
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    const diffTime = Math.abs(checkOutDate.getTime() - checkInDate.getTime());
+    const nights = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    const subtotal = room.price * nights;
+    const vat = Math.round(subtotal * 0.15);
+    const serviceFee = Math.round(subtotal * 0.10);
+    const grandTotal = subtotal + vat + serviceFee;
+    return { nights, subtotal, vat, serviceFee, grandTotal };
   };
 
   const handleCancelBooking = async (bookingId: number) => {
@@ -232,46 +458,68 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
     setServiceRequestForm(prev => ({ ...prev, type, item, cost }));
   };
 
-  // WhatsApp chat handler
-  const handleSendChat = (e: React.FormEvent) => {
+  // WhatsApp/System Chat handler
+  const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
-    const userMsg = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: chatInput,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setChatMessages(prev => [...prev, userMsg]);
-    const promptText = chatInput.toLowerCase();
+    const textToSend = chatInput.trim();
     setChatInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      let reply = "Thank you for reaching out! Our reception desk has received your note and will prepare everything for your stay.";
-      
-      if (promptText.includes('coffee') || promptText.includes('buna')) {
-        reply = "☕ You are asking about Chiro's world-famous coffee! We source single-origin organic beans directly from farmers in the Chercher hills. We hold live coffee ceremonies every afternoon in our Highlands lounge!";
-      } else if (promptText.includes('mountain') || promptText.includes('hike') || promptText.includes('tour')) {
-        reply = "⛰️ Chiro sits at the base of the majestic Chercher Mountains! We organize guided hiking tours and mountain safaris complete with transportation, security, and organic refreshments.";
-      } else if (promptText.includes('wifi') || promptText.includes('internet')) {
-        reply = "📶 Yes! We have dedicated, redundant fiber optic high-speed internet (over 100 Mbps) across the entire resort. Perfect for working or streaming high-definition media.";
-      } else if (promptText.includes('food') || promptText.includes('dinner') || promptText.includes('restaurant')) {
-        reply = "🍽️ Our signature Gara Restaurant is open 24/7. We serve delicious traditional Hararghe recipes (Doro Wat, Kitfo, fresh Beef Tibs) and high-quality international favorites.";
-      } else if (promptText.includes('rate') || promptText.includes('price') || promptText.includes('discount')) {
-        reply = "💳 Our rates start at 1,500 ETB per night for standard suites up to 4,200 ETB for luxury executive suites. Full gourmet buffet breakfast, internet, and secure parking are always 100% free.";
+    try {
+      // 1. Post the user's message
+      const res = await fetch('/api/system-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSend, type: 'info' })
+      });
+      if (!res.ok) throw new Error('Failed to post');
+
+      // Fetch updated messages
+      const updatedRes = await fetch('/api/system-messages');
+      if (updatedRes.ok) {
+        const data = await updatedRes.json();
+        setChatMessages(data);
       }
 
-      setChatMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        sender: 'concierge',
-        text: reply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
+      // 2. Perform Concierge Auto-Responder Logic if matching certain keywords
+      const promptText = textToSend.toLowerCase();
+      let reply = "";
+      
+      if (promptText.includes('coffee') || promptText.includes('buna')) {
+        reply = "☕ [Aschalew Concierge Bot]: We source single-origin organic coffee beans directly from farmers in the Chercher hills. We hold live traditional coffee ceremonies every afternoon in our Highlands lounge!";
+      } else if (promptText.includes('mountain') || promptText.includes('hike') || promptText.includes('tour')) {
+        reply = "⛰️ [Aschalew Concierge Bot]: Chiro sits at the base of the Chercher Mountains! We organize guided hiking tours and mountain excursions complete with transportation, security, and refreshments.";
+      } else if (promptText.includes('wifi') || promptText.includes('internet')) {
+        reply = "📶 [Aschalew Concierge Bot]: Yes! We have dedicated fiber optic high-speed internet (over 100 Mbps) across the entire resort. Perfect for working and streaming.";
+      } else if (promptText.includes('food') || promptText.includes('dinner') || promptText.includes('restaurant')) {
+        reply = "🍽️ [Aschalew Concierge Bot]: Our signature Gara Restaurant is open 24/7. We serve traditional Hararghe recipes and high-quality international favorites.";
+      } else if (promptText.includes('rate') || promptText.includes('price') || promptText.includes('discount')) {
+        reply = "💳 [Aschalew Concierge Bot]: Our rates start at 1,500 ETB per night for standard rooms. Buffet breakfast, high-speed Wi-Fi, and parking are always 100% free.";
+      }
+
+      if (reply) {
+        // Wait a small delay to simulate typing, then post concierge reply as a system announcement
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await fetch('/api/system-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: reply, type: 'success' })
+        });
+      }
+
+      // Fetch final updated messages
+      const finalRes = await fetch('/api/system-messages');
+      if (finalRes.ok) {
+        const data = await finalRes.json();
+        setChatMessages(data);
+      }
+    } catch (err) {
+      console.error('Failed to post message to system conversation:', err);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   // Pre-book table / spa handler
@@ -333,9 +581,9 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
 
             <div className="flex items-center gap-2 border-l border-zinc-800 pl-4">
               <img 
-                src={user.photoUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100"} 
+                src={user.photoUrl || user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.email || 'guest'}`} 
                 alt="Profile" 
-                className="w-8 h-8 rounded-full border border-zinc-700"
+                className="w-8 h-8 rounded-full border border-zinc-700 shrink-0"
               />
               <span className="hidden md:inline text-xs text-zinc-400 font-semibold">{user.displayName || user.email}</span>
               <button 
@@ -391,19 +639,49 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
           </div>
         </div>
 
+        {/* Dynamic Welcome Header */}
+        <DynamicWelcomeHeader user={user} myBookings={myBookings} />
+
         {/* Dynamic Alerts */}
-        {serviceBookingSuccess && (
-          <div className="max-w-7xl mx-auto px-6 mt-6">
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }} 
-              animate={{ opacity: 1, y: 0 }}
-              className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-3 shadow"
-            >
-              <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <span>{serviceBookingSuccess}</span>
-            </motion.div>
-          </div>
-        )}
+        <div className="max-w-7xl mx-auto px-6 mt-6 space-y-3">
+          <AnimatePresence>
+            {successMessage && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-medium flex items-center gap-3 shadow-lg shadow-emerald-500/5"
+              >
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                {successMessage}
+              </motion.div>
+            )}
+            
+            {error && !selectedRoom && !showCheckout && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium flex items-center gap-3 shadow-lg shadow-red-500/5"
+              >
+                <ShieldAlert className="w-5 h-5 flex-shrink-0" />
+                {error}
+              </motion.div>
+            )}
+
+            {serviceBookingSuccess && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }} 
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-3 shadow"
+              >
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                <span>{serviceBookingSuccess}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Tab Contents */}
         <div className="max-w-7xl mx-auto px-6 mt-6 pb-12">
@@ -878,9 +1156,9 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
                     <button 
                       type="submit"
                       disabled={isSubmittingBooking || !bookingForm.roomId || !bookingForm.checkIn || !bookingForm.checkOut}
-                      className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer disabled:opacity-40 transition"
+                      className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer disabled:opacity-40 transition flex items-center justify-center gap-1.5"
                     >
-                      {isSubmittingBooking ? 'Reserving...' : 'Instant Secure Booking'}
+                      <span>Proceed to Payment 💳</span>
                     </button>
                   </form>
                 </div>
@@ -1215,7 +1493,7 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
             </div>
           )}
 
-          {/* TAB 7: CONTACT & LOCATION WITH GOOGLE MAPS AND WHATSAPP LIVE CHAT */}
+          {/* TAB 7: CONTACT & LOCATION WITH GOOGLE MAPS AND SYSTEM CONVERSATION CHANNEL */}
           {activeTab === 'contact' && (
             <div className="space-y-12">
               <div>
@@ -1224,48 +1502,55 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
                   Contact &amp; Location Center
                 </h2>
                 <p className="text-zinc-400 text-sm mt-1">
-                  Connect instantly with our hospitality desk over simulated WhatsApp Live Chat or inspect our precise Chiro coordinates.
+                  Connect instantly with our hospitality desk over the shared System Conversation Channel or inspect our precise Chiro coordinates.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
-                {/* Simulated WhatsApp Live Chat desk */}
+                {/* Shared System Conversation Channel */}
                 <div className="lg:col-span-5 bg-zinc-900/40 border border-zinc-900 rounded-2xl overflow-hidden flex flex-col justify-between h-[520px]">
                   {/* Chat header */}
-                  <div className="bg-emerald-950/40 border-b border-zinc-850 p-4 flex items-center justify-between">
+                  <div className="bg-amber-950/20 border-b border-zinc-850 p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         <img 
                           src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100" 
-                          alt="Concierge Avatar" 
-                          className="w-10 h-10 rounded-full border border-emerald-500/20" 
+                          alt="System Core Avatar" 
+                          className="w-10 h-10 rounded-full border border-amber-500/20" 
                         />
-                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-zinc-900 rounded-full" />
+                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-amber-500 border-2 border-zinc-900 rounded-full" />
                       </div>
                       <div>
-                        <h3 className="font-display font-bold text-sm text-zinc-100">Aschalew Concierge</h3>
-                        <span className="text-[9px] font-mono text-emerald-400 font-black tracking-wider uppercase">WhatsApp Live Help</span>
+                        <h3 className="font-display font-bold text-sm text-zinc-100">System Chat Channel</h3>
+                        <span className="text-[9px] font-mono text-amber-500 font-black tracking-wider uppercase">Shared Message Board</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold uppercase tracking-wider scale-90">Instant</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold uppercase tracking-wider scale-90">Live</span>
                     </div>
                   </div>
 
                   {/* Messages container */}
                   <div className="flex-grow p-4 overflow-y-auto space-y-3 font-sans text-xs bg-zinc-950/30">
                     {chatMessages.map((msg) => {
-                      const isMe = msg.sender === 'user';
+                      const isMe = msg.senderEmail === user?.email;
+                      const isSystem = msg.senderRole === 'system';
+                      const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
                       return (
-                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[85%] rounded-2xl p-3 shadow-md ${
+                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          {!isMe && !isSystem && (
+                            <span className="text-[9px] font-bold font-mono text-zinc-500 mb-0.5 px-1 uppercase tracking-wider">
+                              {msg.senderName} ({msg.senderRole})
+                            </span>
+                          )}
+                          <div className={`max-w-[85%] rounded-2xl p-3 shadow-md leading-relaxed ${
                             isMe 
-                              ? 'bg-amber-500 text-zinc-950 font-semibold rounded-br-none' 
-                              : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-none'
+                              ? 'bg-amber-500 text-zinc-950 font-semibold rounded-br-none font-mono text-[11px]' 
+                              : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-none font-mono text-[11px]'
                           }`}>
-                            <p className="leading-relaxed">{msg.text}</p>
-                            <span className="block text-[8px] text-right mt-1 opacity-60 font-mono">{msg.time}</span>
+                            <p className="whitespace-pre-wrap">{msg.text}</p>
+                            <span className="block text-[8px] text-right mt-1 opacity-60 font-mono">{timeStr}</span>
                           </div>
                         </div>
                       );
@@ -1289,11 +1574,11 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       placeholder="Type a query (e.g. coffee, hiking, wifi)..."
-                      className="flex-grow bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500"
+                      className="flex-grow bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
                     />
                     <button 
                       type="submit" 
-                      className="p-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-xl cursor-pointer transition flex items-center justify-center shrink-0"
+                      className="p-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-xl cursor-pointer transition flex items-center justify-center shrink-0"
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -1358,145 +1643,254 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
                   <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
                   <span className="text-sm">Loading your reservations...</span>
                 </div>
-              ) : myBookings.length === 0 ? (
-                <div className="text-center py-16 bg-zinc-900/20 border border-zinc-800/80 rounded-2xl">
-                  <BedDouble className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-                  <h3 className="font-display font-bold text-lg text-zinc-300">No Reservations Yet</h3>
-                  <p className="text-zinc-500 text-sm mt-1 max-w-sm mx-auto mb-6">
-                    You do not have any active or previous room bookings. Start by choosing your room.
-                  </p>
-                  <button 
-                    onClick={() => setActiveTab('rooms')}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-lg text-xs"
-                  >
-                    Browse Available Rooms
-                  </button>
-                </div>
               ) : (
-                <div className="space-y-6">
-                  {myBookings.map(({ booking, room }) => (
-                    <div 
-                      key={booking.id}
-                      className="bg-zinc-900/30 border border-zinc-800/80 rounded-xl overflow-hidden p-6 hover:border-zinc-700/80 transition duration-200"
-                    >
-                      {/* Upper row */}
-                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-6 border-b border-zinc-800/60">
-                        <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-lg bg-zinc-950 overflow-hidden shrink-0 border border-zinc-800">
-                            <img src={room.imageUrl || 'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&q=80&w=200'} alt="" className="w-full h-full object-cover" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-zinc-400 text-xs font-semibold uppercase tracking-wider">Room {room.roomNumber}</span>
-                              <span className="text-zinc-600">•</span>
-                              <span className="text-zinc-100 font-bold capitalize">{room.type} Suite</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-zinc-500 text-xs mt-1 font-mono">
-                              <Calendar className="w-3.5 h-3.5 text-amber-500/60" />
-                              <span>{booking.checkIn}</span>
-                              <span>to</span>
-                              <span>{booking.checkOut}</span>
-                            </div>
-                          </div>
-                        </div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* Left Column: Stays & Bookings */}
+                  <div className="lg:col-span-8 space-y-6">
+                    {myBookings.length === 0 ? (
+                      <div className="text-center py-16 bg-zinc-900/20 border border-zinc-800/80 rounded-2xl">
+                        <BedDouble className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+                        <h3 className="font-display font-bold text-lg text-zinc-300">No Reservations Yet</h3>
+                        <p className="text-zinc-500 text-sm mt-1 max-w-sm mx-auto mb-6">
+                          You do not have any active or previous room bookings. Start by choosing your room.
+                        </p>
+                        <button 
+                          onClick={() => setActiveTab('rooms')}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-lg text-xs"
+                        >
+                          Browse Available Rooms
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {myBookings.map(({ booking, room }) => (
+                          <div 
+                            key={booking.id}
+                            className="bg-zinc-900/30 border border-zinc-800/80 rounded-xl overflow-hidden p-6 hover:border-zinc-700/80 transition duration-200 text-left"
+                          >
+                            {/* Upper row */}
+                            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-6 border-b border-zinc-800/60">
+                              <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-lg bg-zinc-950 overflow-hidden shrink-0 border border-zinc-800">
+                                  <img src={room.imageUrl || 'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&q=80&w=200'} alt="" className="w-full h-full object-cover" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-zinc-400 text-xs font-semibold uppercase tracking-wider">Room {room.roomNumber}</span>
+                                    <span className="text-zinc-600">•</span>
+                                    <span className="text-zinc-100 font-bold capitalize">{room.type} Suite</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-zinc-500 text-xs mt-1 font-mono">
+                                    <Calendar className="w-3.5 h-3.5 text-amber-500/60" />
+                                    <span>{booking.checkIn}</span>
+                                    <span>to</span>
+                                    <span>{booking.checkOut}</span>
+                                  </div>
+                                </div>
+                              </div>
 
-                        {/* Status Badges & Quick Action */}
-                        <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
-                          <div className="text-left lg:text-right">
-                            <span className="text-xs text-zinc-500 block font-semibold uppercase tracking-wider">Total cost</span>
-                            <span className="text-amber-400 font-black text-lg font-mono">{booking.totalPrice} ETB</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
-                              booking.status === 'checked_in' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
-                              booking.status === 'checked_out' ? 'bg-zinc-800 text-zinc-400 border border-zinc-700' :
-                              booking.status === 'cancelled' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                              'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                            }`}>
-                              {booking.status.replace('_', ' ')}
-                            </span>
+                              {/* Status Badges & Quick Action */}
+                              <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                                <div className="text-left lg:text-right">
+                                  <span className="text-xs text-zinc-500 block font-semibold uppercase tracking-wider">Total cost</span>
+                                  <span className="text-amber-400 font-black text-lg font-mono">{booking.totalPrice} ETB</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                                    booking.status === 'checked_in' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                                    booking.status === 'checked_out' ? 'bg-zinc-800 text-zinc-400 border border-zinc-700' :
+                                    booking.status === 'cancelled' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                    'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                  }`}>
+                                    {booking.status.replace('_', ' ')}
+                                  </span>
 
-                            {booking.status === 'confirmed' && (
-                              <button 
-                                onClick={() => handleCancelBooking(booking.id)}
-                                className="p-2 hover:bg-red-500/10 hover:text-red-400 text-zinc-500 rounded-lg transition"
-                                title="Cancel Reservation"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                                  {booking.status === 'confirmed' && (
+                                    <button 
+                                      onClick={() => handleCancelBooking(booking.id)}
+                                      className="p-2 hover:bg-red-500/10 hover:text-red-400 text-zinc-500 rounded-lg transition"
+                                      title="Cancel Reservation"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Lower section: Service Request Hub */}
+                            {booking.status !== 'cancelled' && booking.status !== 'checked_out' && (
+                              <div className="mt-6">
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                                  <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
+                                    <UtensilsCrossed className="w-4 h-4 text-amber-500" />
+                                    In-Room Service Hub
+                                  </h4>
+                                  <div className="flex gap-2">
+                                    <button 
+                                      onClick={() => {
+                                        setServiceRequestForm(prev => ({ ...prev, bookingId: booking.id }));
+                                        selectServiceType('room_service');
+                                      }}
+                                      className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/50 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition text-left"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      Order Room Service
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        setServiceRequestForm(prev => ({ ...prev, bookingId: booking.id }));
+                                        selectServiceType('housekeeping');
+                                      }}
+                                      className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/50 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition text-left"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      Request Housekeeping
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Submitted service requests for this booking */}
+                                {activeServiceRequests[booking.id] && activeServiceRequests[booking.id].length > 0 ? (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {activeServiceRequests[booking.id].map((req) => (
+                                      <div 
+                                        key={req.id}
+                                        className="bg-zinc-950/40 border border-zinc-800 p-3 rounded-lg flex items-center justify-between"
+                                      >
+                                        <div className="min-w-0">
+                                          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-500/70 block capitalize text-left">
+                                            {req.type.replace('_', ' ')}
+                                          </span>
+                                          <span className="text-xs font-bold text-zinc-200 truncate block mt-0.5 text-left">{req.item}</span>
+                                          <span className="text-[10px] text-zinc-500 font-mono block mt-0.5 text-left">
+                                            Qty: {req.quantity} {req.cost > 0 && `• ${req.cost} ETB`}
+                                          </span>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                          req.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                          req.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                          'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                                        }`}>
+                                          {req.status.replace('_', ' ')}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-zinc-600 text-xs italic font-sans pl-1 text-left">
+                                    No current service requests. Need refreshments, fresh towels, or housekeeping? Use the links above.
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Preferences Panel */}
+                  <div className="lg:col-span-4 space-y-6">
+                    <div className="bg-zinc-900/40 border border-zinc-900 rounded-2xl p-6 space-y-6 text-left">
+                      <div className="flex items-center gap-2 pb-4 border-b border-zinc-850">
+                        <Settings className="w-5 h-5 text-amber-500" />
+                        <div>
+                          <h3 className="font-display font-bold text-sm text-zinc-100">Guest Preferences</h3>
+                          <p className="text-[10px] uppercase font-mono text-zinc-500">Aschalew Member Folio</p>
                         </div>
                       </div>
 
-                      {/* Lower section: Service Request Hub */}
-                      {booking.status !== 'cancelled' && booking.status !== 'checked_out' && (
-                        <div className="mt-6">
-                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                            <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
-                              <UtensilsCrossed className="w-4 h-4 text-amber-500" />
-                              In-Room Service Hub
-                            </h4>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => {
-                                  setServiceRequestForm(prev => ({ ...prev, bookingId: booking.id }));
-                                  selectServiceType('room_service');
-                                }}
-                                className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/50 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Order Room Service
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  setServiceRequestForm(prev => ({ ...prev, bookingId: booking.id }));
-                                  selectServiceType('housekeeping');
-                                }}
-                                className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/50 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Request Housekeeping
-                              </button>
-                            </div>
-                          </div>
+                      {prefsSuccessMsg ? (
+                        <motion.div 
+                          initial={{ opacity: 0, y: -5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2 font-medium"
+                        >
+                          <Check className="w-4 h-4 shrink-0" />
+                          <span>{prefsSuccessMsg}</span>
+                        </motion.div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-500 leading-relaxed">
+                          Configure how you want our reservation system to reach you. Stated preferences apply to all future active and pending room reservations.
+                        </p>
+                      )}
 
-                          {/* Submitted service requests for this booking */}
-                          {activeServiceRequests[booking.id] && activeServiceRequests[booking.id].length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {activeServiceRequests[booking.id].map((req) => (
-                                <div 
-                                  key={req.id}
-                                  className="bg-zinc-950/40 border border-zinc-800 p-3 rounded-lg flex items-center justify-between"
-                                >
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-500/70 block capitalize">
-                                      {req.type.replace('_', ' ')}
-                                    </span>
-                                    <span className="text-xs font-bold text-zinc-200 truncate block mt-0.5">{req.item}</span>
-                                    <span className="text-[10px] text-zinc-500 font-mono block mt-0.5">
-                                      Qty: {req.quantity} {req.cost > 0 && `• ${req.cost} ETB`}
-                                    </span>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    req.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                    req.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                                    'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                                  }`}>
-                                    {req.status.replace('_', ' ')}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-zinc-600 text-xs italic font-sans pl-1">
-                              No current service requests. Need refreshments, fresh towels, or housekeeping? Use the links above.
+                      <div className="space-y-5">
+                        {/* Option 1: Confirmations */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1 text-left">
+                            <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                              <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                              Email Confirmations
+                            </span>
+                            <p className="text-[10px] text-zinc-500 leading-normal">
+                              Receive an immediate automated PDF invoice, secure door passcode, and check-in receipt instantly upon successful payment.
                             </p>
-                          )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleConfirmations(!prefEmailConfirmations)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              prefEmailConfirmations ? 'bg-amber-500' : 'bg-zinc-800'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-zinc-950 shadow ring-0 transition duration-200 ease-in-out ${
+                                prefEmailConfirmations ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Option 2: Reminders */}
+                        <div className="flex items-start justify-between gap-4 pt-4 border-t border-zinc-850/60">
+                          <div className="space-y-1 text-left">
+                            <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                              <Bell className="w-3.5 h-3.5 text-zinc-400" />
+                              Stay Reminders &amp; Tips
+                            </span>
+                            <p className="text-[10px] text-zinc-500 leading-normal">
+                              Receive helpful mountain weather notices, packing recommendations, and local travel guides 24 hours before check-in.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleReminders(!prefEmailReminders)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              prefEmailReminders ? 'bg-amber-500' : 'bg-zinc-800'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-zinc-950 shadow ring-0 transition duration-200 ease-in-out ${
+                                prefEmailReminders ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isUpdatingPrefs && (
+                        <div className="flex items-center gap-1.5 justify-center text-[10px] font-mono text-amber-500 animate-pulse pt-2">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Saving choices to guest account...</span>
                         </div>
                       )}
+
+                      <div className="bg-zinc-950 p-4 border border-zinc-850 rounded-xl space-y-2 text-xs text-left">
+                        <span className="text-[9px] uppercase tracking-wider text-zinc-600 font-bold block">Delivery Destination</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span className="font-mono text-zinc-300 font-semibold truncate text-[11px]" title={user.email}>
+                            {user.email || 'guest@aschalewhotel.com'}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-zinc-500 leading-relaxed font-sans">
+                          To change delivery email, update your profile or sign in using your corporate account.
+                        </p>
+                      </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1504,6 +1898,19 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
 
         </div>
       </div>
+
+      {/* Floating QR Scanner Button */}
+      <button
+        onClick={() => setShowQRScanner(true)}
+        className={`fixed bottom-6 right-6 z-40 p-4 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center ${
+          theme === 'dark' 
+            ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400' 
+            : 'bg-stone-900 text-white hover:bg-stone-800'
+        }`}
+        title="Scan QR Code"
+      >
+        <QrCode className="w-6 h-6" />
+      </button>
 
       {/* Room Booking Modal */}
       {selectedRoom && (
@@ -1620,7 +2027,7 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
                     disabled={isSubmittingBooking}
                     className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    {isSubmittingBooking ? 'Reserving...' : 'Confirm Reservation'}
+                    <span>Proceed to Payment 💳</span>
                   </button>
                 </div>
               </div>
@@ -1845,6 +2252,478 @@ export default function GuestView({ token, user, rooms, onLogout, onToggleRole }
             </form>
           </motion.div>
         </div>
+      )}
+      {/* SIMULATED PAYMENT CHECKOUT MODAL */}
+      {showCheckout && checkoutData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/90 backdrop-blur-md overflow-y-auto">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl my-8 flex flex-col md:flex-row text-zinc-200 text-left"
+          >
+            {/* Left Hand: Receipt & Booking Summary */}
+            <div className="w-full md:w-5/12 bg-zinc-950 p-6 border-b md:border-b-0 md:border-r border-zinc-850 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-4">
+                  <Receipt className="w-3.5 h-3.5 text-amber-500" />
+                  Booking Invoice
+                </div>
+                
+                <h4 className="font-display font-bold text-base text-zinc-100 capitalize">
+                  {checkoutData.room.type} Suite
+                </h4>
+                <p className="text-xs text-zinc-500 font-mono mt-0.5 font-bold">Room {checkoutData.room.roomNumber}</p>
+                
+                <div className="mt-6 space-y-3.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Stay Duration</span>
+                    <span className="text-zinc-300 font-mono font-medium">
+                      {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).nights} {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).nights === 1 ? 'Night' : 'Nights'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Check-In</span>
+                    <span className="text-zinc-300 font-mono">{checkoutData.checkIn}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Check-Out</span>
+                    <span className="text-zinc-300 font-mono">{checkoutData.checkOut}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Guests</span>
+                    <span className="text-zinc-300">{checkoutData.guestsCount} {checkoutData.guestsCount === 1 ? 'Guest' : 'Guests'}</span>
+                  </div>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-zinc-850/60 space-y-3 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Daily Suite Rate</span>
+                    <span className="text-zinc-300 font-mono">{checkoutData.room.price.toLocaleString()} ETB</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Subtotal</span>
+                    <span className="text-zinc-300 font-mono">
+                      {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).subtotal.toLocaleString()} ETB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">VAT (15%)</span>
+                    <span className="text-zinc-300 font-mono">
+                      {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).vat.toLocaleString()} ETB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Service Fee (10%)</span>
+                    <span className="text-zinc-300 font-mono">
+                      {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).serviceFee.toLocaleString()} ETB
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-zinc-800">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Grand Total</span>
+                  <div className="text-right">
+                    <div className="text-2xl font-black font-mono text-amber-400">
+                      {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).grandTotal.toLocaleString()}
+                    </div>
+                    <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest block mt-0.5">Ethiopian Birr (ETB)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Hand: Checkout Process (Wizard) */}
+            <div className="flex-grow p-6 flex flex-col justify-between min-h-[460px]">
+              
+              {/* Header inside checkout */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="font-display font-extrabold text-lg text-zinc-100">Secure Payment</h3>
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-mono mt-0.5">Aschalew Hotel Gateway</p>
+                </div>
+                <button 
+                  onClick={() => { setShowCheckout(false); setCheckoutData(null); }}
+                  className="p-1.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 hover:text-zinc-100 rounded-lg transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Loader overlay */}
+              {isProcessingPayment ? (
+                <div className="flex-grow flex flex-col items-center justify-center text-center space-y-4">
+                  <RefreshCw className="w-10 h-10 text-amber-500 animate-spin" />
+                  <div>
+                    <h4 className="font-display font-semibold text-zinc-200">Processing Transaction...</h4>
+                    <p className="text-xs text-zinc-500 max-w-xs mx-auto mt-1">
+                      {checkoutStep === 'method' 
+                        ? 'Contacting encrypted local payment server to issue One-Time Passcode (OTP)...' 
+                        : 'Verifying simulated funds and securing room lock inventory ledger...'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* STEP 1: SELECT METHOD */}
+                  {checkoutStep === 'method' && (
+                    <form onSubmit={handleInitiatePayment} className="flex-grow flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <label className="block text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
+                          Select Local Payment Method
+                        </label>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* Telebirr */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMethod('telebirr')}
+                            className={`p-3 rounded-xl border text-left transition flex items-center gap-2 cursor-pointer ${
+                              selectedMethod === 'telebirr' 
+                                ? 'border-emerald-500 bg-emerald-500/10' 
+                                : 'border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/60'
+                            }`}
+                          >
+                            <div className="p-1.5 rounded bg-emerald-500/10 text-emerald-400">
+                              <Smartphone className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-zinc-200 block">Telebirr</span>
+                              <span className="text-[9px] text-zinc-500 block">Ethio Telecom Wallet</span>
+                            </div>
+                          </button>
+
+                          {/* CBE Birr */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMethod('cbe')}
+                            className={`p-3 rounded-xl border text-left transition flex items-center gap-2 cursor-pointer ${
+                              selectedMethod === 'cbe' 
+                                ? 'border-purple-500 bg-purple-500/10' 
+                                : 'border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/60'
+                            }`}
+                          >
+                            <div className="p-1.5 rounded bg-purple-500/10 text-purple-400">
+                              <Award className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-zinc-200 block">CBE Birr</span>
+                              <span className="text-[9px] text-zinc-500 block">Commercial Bank</span>
+                            </div>
+                          </button>
+
+                          {/* Chapa Pay */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMethod('chapa')}
+                            className={`p-3 rounded-xl border text-left transition flex items-center gap-2 cursor-pointer ${
+                              selectedMethod === 'chapa' 
+                                ? 'border-teal-500 bg-teal-500/10' 
+                                : 'border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/60'
+                            }`}
+                          >
+                            <div className="p-1.5 rounded bg-teal-500/10 text-teal-400">
+                              <CreditCard className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-zinc-200 block">Chapa Pay</span>
+                              <span className="text-[9px] text-zinc-500 block">Visa / MasterCard</span>
+                            </div>
+                          </button>
+
+                          {/* Cash Transfer */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMethod('cash')}
+                            className={`p-3 rounded-xl border text-left transition flex items-center gap-2 cursor-pointer ${
+                              selectedMethod === 'cash' 
+                                ? 'border-zinc-500 bg-zinc-500/10' 
+                                : 'border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/60'
+                            }`}
+                          >
+                            <div className="p-1.5 rounded bg-zinc-800 text-zinc-400">
+                              <Compass className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-zinc-200 block">At Property</span>
+                              <span className="text-[9px] text-zinc-500 block">Cash / Direct Bank</span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* Payment Credentials Form */}
+                        <div className="pt-4 border-t border-zinc-850">
+                          {selectedMethod === 'telebirr' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+                                <span>Telebirr Account Number</span>
+                                <span className="text-emerald-400 font-bold">● Secure API Connected</span>
+                              </div>
+                              <div className="relative">
+                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono text-zinc-500 font-bold">+251</span>
+                                <input 
+                                  type="tel"
+                                  pattern="[0-9]{9}"
+                                  required
+                                  value={paymentPhone}
+                                  onChange={(e) => setPaymentPhone(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-14 pr-4 py-3 text-sm text-zinc-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/10 font-mono"
+                                  placeholder="912345678"
+                                />
+                              </div>
+                              <p className="text-[9px] text-zinc-500">
+                                Enter your 9-digit Telebirr wallet phone number (excluding the country prefix).
+                              </p>
+                            </div>
+                          )}
+
+                          {selectedMethod === 'cbe' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+                                <span>CBE Birr Wallet ID / Phone</span>
+                                <span className="text-purple-400 font-bold">● CBE Live Sandbox</span>
+                              </div>
+                              <div className="relative">
+                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono text-zinc-500 font-bold">+251</span>
+                                <input 
+                                  type="tel"
+                                  pattern="[0-9]{9}"
+                                  required
+                                  value={paymentPhone}
+                                  onChange={(e) => setPaymentPhone(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-14 pr-4 py-3 text-sm text-zinc-200 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500/10 font-mono"
+                                  placeholder="912345678"
+                                />
+                              </div>
+                              <p className="text-[9px] text-zinc-500">
+                                Enter the Commercial Bank of Ethiopia CBE Birr registered mobile number.
+                              </p>
+                            </div>
+                          )}
+
+                          {selectedMethod === 'chapa' && (
+                            <div className="space-y-2.5">
+                              <span className="block text-[10px] font-mono text-zinc-400">Chapa Global Card Settlement</span>
+                              
+                              <div className="space-y-2">
+                                <input 
+                                  type="text"
+                                  required
+                                  maxLength={19}
+                                  value={paymentCard.number}
+                                  onChange={(e) => {
+                                    const val = e.target.value.replace(/\D/g, '').match(/.{1,4}/g)?.join(' ') || '';
+                                    setPaymentCard(prev => ({ ...prev, number: val }));
+                                  }}
+                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-teal-500 focus:outline-none font-mono"
+                                  placeholder="Card Number (4111 2222 3333 4444)"
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input 
+                                    type="text"
+                                    required
+                                    maxLength={5}
+                                    value={paymentCard.expiry}
+                                    onChange={(e) => {
+                                      let val = e.target.value.replace(/\D/g, '');
+                                      if (val.length > 2) val = val.slice(0, 2) + '/' + val.slice(2, 4);
+                                      setPaymentCard(prev => ({ ...prev, expiry: val }));
+                                    }}
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-teal-500 focus:outline-none font-mono text-center"
+                                    placeholder="MM / YY"
+                                  />
+                                  <input 
+                                    type="password"
+                                    required
+                                    maxLength={3}
+                                    value={paymentCard.cvv}
+                                    onChange={(e) => setPaymentCard(prev => ({ ...prev, cvv: e.target.value.replace(/\D/g, '') }))}
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-teal-500 focus:outline-none font-mono text-center"
+                                    placeholder="CVV"
+                                  />
+                                </div>
+                                <input 
+                                  type="text"
+                                  required
+                                  value={paymentCard.holder}
+                                  onChange={(e) => setPaymentCard(prev => ({ ...prev, holder: e.target.value }))}
+                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:border-teal-500 focus:outline-none uppercase"
+                                  placeholder="Cardholder Full Name"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedMethod === 'cash' && (
+                            <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 text-zinc-400 text-xs space-y-2 leading-relaxed">
+                              <p className="flex items-center gap-1.5 font-semibold text-zinc-300">
+                                <Lock className="w-4 h-4 text-amber-500" />
+                                Pay at Property / Bank Transfer
+                              </p>
+                              <p>
+                                Skip online settlement and pay with physical Cash (ETB, USD, EUR) or complete a direct Bank Wire (CBE / Awash / Dashen Bank) during your check-in reception.
+                              </p>
+                              <p className="text-[10px] text-amber-500/70 font-mono">
+                                Note: We hold vacant suites up to 6:00 PM on your arrival day unless fully pre-paid.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-6 mt-6 border-t border-zinc-850 flex justify-end gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => { setShowCheckout(false); setCheckoutData(null); }}
+                          className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 font-semibold rounded-xl text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          type="submit"
+                          className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          Proceed to Authorize
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* STEP 2: SMS PIN / OTP AUTHENTICATION */}
+                  {checkoutStep === 'otp' && (
+                    <form onSubmit={handleVerifyOtp} className="flex-grow flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-amber-400 text-xs font-mono font-bold uppercase tracking-wider">
+                          <Lock className="w-4 h-4" />
+                          Simulated Security Verification
+                        </div>
+                        
+                        <p className="text-zinc-300 text-xs leading-relaxed">
+                          A simulated secure payment request has been sent to your device. We dispatched a dummy 6-digit SMS verification code to check authorization.
+                        </p>
+                        
+                        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed font-mono">
+                          <span className="font-bold uppercase text-amber-400">DEMO AUTHORIZATION KEY:</span>
+                          <p className="mt-1">
+                            Please type PIN <span className="font-black underline text-sm text-zinc-100">123456</span> to simulate a successful payment approval.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2 pt-2">
+                          <label className="block text-[10px] uppercase font-bold text-zinc-500 text-center">
+                            Enter 6-Digit SMS Verification PIN
+                          </label>
+                          <input 
+                            type="text"
+                            required
+                            maxLength={6}
+                            autoFocus
+                            value={paymentOtp}
+                            onChange={(e) => {
+                              setPaymentOtp(e.target.value.replace(/\D/g, ''));
+                              setOtpError(null);
+                            }}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3.5 text-center text-xl font-bold font-mono tracking-[1em] text-zinc-100 focus:border-amber-500 focus:outline-none"
+                            placeholder="••••••"
+                          />
+                          {otpError && (
+                            <p className="text-red-400 text-center text-[11px] font-mono font-semibold">
+                              ❌ {otpError}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-6 mt-6 border-t border-zinc-850 flex justify-between items-center">
+                        <button 
+                          type="button"
+                          onClick={() => setCheckoutStep('method')}
+                          className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 font-semibold rounded-xl text-xs cursor-pointer"
+                        >
+                          Back to Methods
+                        </button>
+                        <button 
+                          type="submit"
+                          className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Verify &amp; Authorize
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* STEP 3: TRANSACTION RECEIPT & SUCCESS */}
+                  {checkoutStep === 'success' && (
+                    <div className="flex-grow flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <div className="flex flex-col items-center text-center py-2 space-y-1">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-1 animate-bounce">
+                            <Check className="w-6 h-6" />
+                          </div>
+                          <h4 className="font-display font-bold text-base text-emerald-400">Payment Succeeded</h4>
+                          <p className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">Funds Secured and Settled</p>
+                        </div>
+
+                        {/* Thermal Paper Receipt Design */}
+                        <div className="p-4 bg-zinc-950 rounded-xl border border-dashed border-zinc-800 space-y-3 font-mono text-[10px]">
+                          <div className="text-center font-bold border-b border-zinc-900 pb-2 text-zinc-400">
+                            ASCHALEW INTERNATIONAL RESORT
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-600">TRANSACTION REF</span>
+                            <span className="text-zinc-300 font-semibold">{transactionId}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-600">METHOD</span>
+                            <span className="text-zinc-300 uppercase font-semibold">{selectedMethod}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-600">SETTLEMENT TIMESTAMP</span>
+                            <span className="text-zinc-300">{new Date().toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-zinc-900 pt-2 text-xs font-bold">
+                            <span className="text-zinc-400">AMOUNT PAID</span>
+                            <span className="text-emerald-400 font-mono font-black">
+                              {calculateTotal(checkoutData.room, checkoutData.checkIn, checkoutData.checkOut).grandTotal.toLocaleString()} ETB
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
+                          Your digital payment has been verified. Click the button below to register the booking permanently in our Hotel PMS and lock your dates!
+                        </p>
+                      </div>
+
+                      <div className="pt-6 mt-4 border-t border-zinc-850 flex justify-end">
+                        <button 
+                          onClick={handleCompleteBookingAndSave}
+                          disabled={isSubmittingBooking}
+                          className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/20 uppercase tracking-wider"
+                        >
+                          {isSubmittingBooking ? 'Locking Suite Booking...' : 'Complete Booking & Save 🎉'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* QR Scanner Component */}
+      {showQRScanner && (
+        <QRScanner
+          isDarkMode={theme === 'dark'}
+          onClose={() => setShowQRScanner(false)}
+          onScan={handleQRScan}
+          title="Hotel QR Scanner"
+          description="Scan to Check-in or view Restaurant Menu"
+        />
       )}
     </div>
   );

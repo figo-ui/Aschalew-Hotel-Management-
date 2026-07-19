@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/index.ts';
 import { rooms as roomsTable, bookings as bookingsTable, serviceRequests as serviceRequestsTable, users as usersTable } from './src/db/schema.ts';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import { adminAuth } from './src/lib/firebase-admin.ts';
 import { getOrCreateUser } from './src/db/users.ts';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { 
@@ -993,6 +994,80 @@ app.post('/api/admin/wake-up/:index/status', requireAuth, requireAdmin, (req: Au
     res.status(404).json({ error: 'Wake up call not found' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to modify wake up call' });
+  }
+});
+
+
+// System Conversation Message Board (Supports all user types - including public visitors)
+app.get('/api/system-messages', async (req, res) => {
+  try {
+    const store = getHmsStore();
+    res.json(store.systemMessages || []);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to retrieve system conversation messages' });
+  }
+});
+
+app.post('/api/system-messages', async (req, res) => {
+  try {
+    const { text, type, senderName } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Message text is required' });
+    }
+
+    const store = getHmsStore();
+    
+    // Check if authenticated via Authorization header
+    let email = 'visitor@aschalewhotel.com';
+    let displayName = senderName || 'Chiro Visitor';
+    let role = 'visitor';
+
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split('Bearer ')[1];
+      if (token === 'demo-guest-token') {
+        email = 'guest@aschalewhotel.com';
+        displayName = 'Chiro Guest';
+        role = 'guest';
+      } else if (token === 'demo-admin-token') {
+        email = 'admin@aschalewhotel.com';
+        displayName = 'System Admin';
+        role = 'admin';
+      } else {
+        try {
+          const decodedToken = await adminAuth.verifyIdToken(token);
+          email = decodedToken.email || 'unknown';
+          const dbUsers = await db.select().from(usersTable).where(eq(usersTable.uid, decodedToken.uid));
+          role = dbUsers.length > 0 ? dbUsers[0].role : 'guest';
+          displayName = dbUsers.length > 0 
+            ? (dbUsers[0].displayName || dbUsers[0].email) 
+            : (decodedToken.displayName || decodedToken.email || 'HMS User');
+        } catch (authError) {
+          console.warn('Optional auth verification failed:', authError);
+        }
+      }
+    }
+
+    const newMessage = {
+      id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      senderName: displayName,
+      senderEmail: email,
+      senderRole: role,
+      text: text,
+      timestamp: new Date().toISOString(),
+      type: type || 'info'
+    };
+
+    if (!store.systemMessages) {
+      store.systemMessages = [];
+    }
+    store.systemMessages.push(newMessage);
+    saveHmsStore(store);
+
+    res.status(201).json(newMessage);
+  } catch (error: any) {
+    console.error('Failed to post system message:', error);
+    res.status(500).json({ error: 'Failed to add message to system conversation' });
   }
 });
 

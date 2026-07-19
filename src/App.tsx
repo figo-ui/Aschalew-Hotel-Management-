@@ -178,7 +178,11 @@ export default function App() {
   return (
     <div className={`${isDarkMode ? 'bg-zinc-950 text-zinc-100' : 'bg-[#faf8f5] text-stone-900'} min-h-screen relative transition-colors duration-205`}>
       {/* Floating Theme and Language Switcher */}
-      <ThemeLanguageSelector />
+      <ThemeLanguageSelector 
+        user={user}
+        onLogout={handleLogout}
+        onToggleRole={handleToggleRole}
+      />
 
       {/* Role and developer utility banner */}
       <div 

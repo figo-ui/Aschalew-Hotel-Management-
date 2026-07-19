@@ -77,6 +77,16 @@ export interface HmsCommunication {
   status: 'sent' | 'delivered';
 }
 
+export interface HmsSystemMessage {
+  id: string;
+  senderName: string;
+  senderEmail: string;
+  senderRole: string; // 'admin' | 'guest' | 'system'
+  text: string;
+  timestamp: string;
+  type?: 'info' | 'success' | 'warning' | 'error';
+}
+
 export interface HmsStoreData {
   guests: HmsGuestProfile[];
   billings: HmsBilling[];
@@ -85,6 +95,7 @@ export interface HmsStoreData {
   auditLogs: HmsAuditLog[];
   nightAudits: HmsNightAudit[];
   communications: HmsCommunication[];
+  systemMessages: HmsSystemMessage[];
   extraRooms: Array<{
     roomId: number;
     floor: number;
@@ -129,6 +140,17 @@ const defaultState: HmsStoreData = {
   ],
   nightAudits: [],
   communications: [],
+  systemMessages: [
+    {
+      id: 'sys-1',
+      senderName: 'HMS System',
+      senderEmail: 'system@aschalew.com',
+      senderRole: 'system',
+      text: 'Welcome to the Aschalew International Hotel System Conversation Channel. Connection established.',
+      timestamp: new Date().toISOString(),
+      type: 'success'
+    }
+  ],
   extraRooms: []
 };
 

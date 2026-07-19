@@ -57,17 +57,33 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
   // Selected Room representation for reservation intent
   const [intentRoom, setIntentRoom] = useState<Room | null>(null);
 
-  // WhatsApp Concierge Chat Widget State
+  // System Conversation Channel (Database Synced)
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [chatMessages, setChatMessages] = useState([
-    {
-      id: '1',
-      sender: 'concierge',
-      text: "Salam! Welcome to Aschalew International Guest Service. 🌿 How can we assist you with your upcoming journey to Chiro (Asbe Teferi) or coffee bookings today?",
-      time: '08:00 AM'
-    }
-  ]);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+
+  // Load and poll system messages
+  useEffect(() => {
+    let active = true;
+    const fetchSystemMessages = async () => {
+      try {
+        const res = await fetch('/api/system-messages');
+        if (res.ok && active) {
+          const data = await res.json();
+          setChatMessages(data);
+        }
+      } catch (err) {
+        console.warn('Unable to reach system messages service (server may be restarting):', err);
+      }
+    };
+
+    fetchSystemMessages();
+    const interval = setInterval(fetchSystemMessages, 4000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Safe fallback list of rooms if database has no records yet
   const fallbackRooms: Room[] = [
@@ -187,7 +203,19 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
       onAuthSuccess(token, dbUser);
     } catch (err: any) {
       console.error('Email Sign-In Error:', err);
-      setError('Invalid email or password. Please try again.');
+      const isOperationNotAllowed = err.code === 'auth/operation-not-allowed' || 
+                                    err.message?.includes('operation-not-allowed') || 
+                                    String(err).includes('operation-not-allowed');
+      if (isOperationNotAllowed) {
+        setError(
+          'Email/Password Authentication is not enabled in your Firebase project. ' +
+          'To enable it, please go to your Firebase Console -> Authentication -> Sign-in method, ' +
+          'click "Add new provider", select "Email/Password", toggle "Enable", and click "Save". ' +
+          'Alternatively, you can instantly log in using the "Instant Sandbox Portals" below without any setup!'
+        );
+      } else {
+        setError('Invalid email or password. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -243,7 +271,21 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
       onAuthSuccess(token, dbUser);
     } catch (err: any) {
       console.error('Email Sign-Up Error:', err);
-      setError(err.code === 'auth/email-already-in-use' ? 'This email address is already in use.' : 'Registration failed.');
+      const isOperationNotAllowed = err.code === 'auth/operation-not-allowed' || 
+                                    err.message?.includes('operation-not-allowed') || 
+                                    String(err).includes('operation-not-allowed');
+      if (isOperationNotAllowed) {
+        setError(
+          'Email/Password Authentication is not enabled in your Firebase project. ' +
+          'To enable it, please go to your Firebase Console -> Authentication -> Sign-in method, ' +
+          'click "Add new provider", select "Email/Password", toggle "Enable", and click "Save". ' +
+          'Alternatively, you can instantly log in using the "Instant Sandbox Portals" below without any setup!'
+        );
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('This email address is already in use.');
+      } else {
+        setError('Registration failed.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -277,46 +319,76 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
     }
   };
 
-  // WhatsApp chatbot answer generation
-  const handleSendChat = (e: React.FormEvent) => {
+  // System Chat chatbot answer generation and database sync
+  const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
-    const userMsg = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: chatInput,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setChatMessages(prev => [...prev, userMsg]);
-    const promptText = chatInput.toLowerCase();
+    const textToSend = chatInput.trim();
     setChatInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      let reply = "Thank you for reaching out! Our reception desk has received your note. Please log in or book directly above to finalize your priority reservation.";
-      
-      if (promptText.includes('coffee') || promptText.includes('buna')) {
-        reply = "☕ You are asking about Chiro's world-famous coffee! We source organic cherries directly from our family farm in the Chercher hills. We hold daily traditional coffee ceremonies at 4:00 PM for all registered guests.";
-      } else if (promptText.includes('mountain') || promptText.includes('hike') || promptText.includes('tour')) {
-        reply = "⛰️ Chiro is the gateway to the stunning Chercher range. We offer fully escorted hiking tours, coffee estate farm tours, and cultural bajaj excursions around town. All can be booked in our guest hub!";
-      } else if (promptText.includes('price') || promptText.includes('rate') || promptText.includes('how much')) {
-        reply = "💳 Our rates start at 1,500 ETB per night for standard rooms, up to 4,500 ETB for the Presidential Chercher Suite. All reservations include organic buffet breakfast, fiber Wi-Fi, and secured guarded parking.";
-      } else if (promptText.includes('wifi') || promptText.includes('internet')) {
-        reply = "📶 Yes! We have dedicated, high-speed fiber internet (100+ Mbps) covering the entire hotel, restaurant, and lobby area.";
-      } else if (promptText.includes('contact') || promptText.includes('phone') || promptText.includes('number')) {
-        reply = "📞 You can reach our front desk directly at +251 25 551 0122 or email our concierge at info@aschalewhotel.com.";
+    try {
+      // 1. Post visitor message to system conversation board
+      const res = await fetch('/api/system-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: textToSend, 
+          type: 'info', 
+          senderName: 'Chiro Visitor' 
+        })
+      });
+      if (!res.ok) throw new Error('Failed to post');
+
+      // Immediate fetch of messages
+      const updatedRes = await fetch('/api/system-messages');
+      if (updatedRes.ok) {
+        const data = await updatedRes.json();
+        setChatMessages(data);
       }
 
-      setChatMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        sender: 'concierge',
-        text: reply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
+      // 2. Automated assistant response
+      const promptText = textToSend.toLowerCase();
+      let reply = "";
+
+      if (promptText.includes('coffee') || promptText.includes('buna')) {
+        reply = "☕ [Aschalew Concierge Bot]: We source organic coffee cherries directly from our family farm in the Chercher hills. We hold daily traditional coffee ceremonies at 4:00 PM for all registered guests.";
+      } else if (promptText.includes('mountain') || promptText.includes('hike') || promptText.includes('tour')) {
+        reply = "⛰️ [Aschalew Concierge Bot]: Chiro is the gateway to the Chercher range. We offer fully escorted hiking tours, coffee estate farm tours, and local bajaj excursions around Chiro.";
+      } else if (promptText.includes('price') || promptText.includes('rate') || promptText.includes('how much')) {
+        reply = "💳 [Aschalew Concierge Bot]: Our rates start at 1,500 ETB per night. All reservations include organic buffet breakfast, fiber Wi-Fi, and secured guarded parking.";
+      } else if (promptText.includes('wifi') || promptText.includes('internet')) {
+        reply = "📶 [Aschalew Concierge Bot]: Yes! We have dedicated, high-speed fiber internet (100+ Mbps) covering the entire hotel, restaurant, and lobby area.";
+      } else if (promptText.includes('contact') || promptText.includes('phone') || promptText.includes('number')) {
+        reply = "📞 [Aschalew Concierge Bot]: You can reach our front desk directly at +251 25 551 0122 or email our concierge at reservations@aschalewhotel.com.";
+      }
+
+      if (reply) {
+        // Wait a small delay to simulate typing, then post concierge reply as a system announcement
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await fetch('/api/system-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            text: reply, 
+            type: 'success',
+            senderName: 'System Bot'
+          })
+        });
+      }
+
+      // Fetch final updated messages
+      const finalRes = await fetch('/api/system-messages');
+      if (finalRes.ok) {
+        const data = await finalRes.json();
+        setChatMessages(data);
+      }
+    } catch (err) {
+      console.error('Failed to post visitor message:', err);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   // Room filtration logic
@@ -912,15 +984,15 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
         <GoogleMapsSection />
       </div>
 
-      {/* FLOATING WHATSAPP & CONCIERGE SIMULATOR WIDGET */}
+      {/* SYSTEM CONVERSATION CHANNEL WIDGET */}
       <div className="max-w-7xl mx-auto px-6 w-full py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-5 space-y-4">
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4AF37] font-mono block">
-            Direct Concierge Desk
+            System Message Board
           </span>
-          <h3 className="text-xl font-bold">24/7 Priority Support Desk</h3>
+          <h3 className="text-xl font-bold">Aschalew System Conversation Channel</h3>
           <p className="text-xs text-zinc-500 leading-relaxed">
-            Need localized support or a corporate invoice quote? Connect directly with our on-duty front desk using our simulated WhatsApp concierge desk below for immediate automated answers.
+            Need localized support or a corporate invoice quote? Connect directly with our on-duty front desk using our shared hotel system conversation channel below.
           </p>
           <div className="space-y-2 pt-2 text-xs">
             <p className="flex items-center gap-2.5">
@@ -938,39 +1010,50 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
           </div>
         </div>
 
-        {/* Live Concierge chatbox */}
+        {/* Live System Chatbox */}
         <div className={`lg:col-span-7 border rounded-2xl flex flex-col h-[340px] overflow-hidden ${
           isDarkMode ? 'bg-zinc-900/40 border-zinc-800' : 'bg-white border-stone-200 shadow-lg'
         }`}>
           {/* Box Header */}
-          <div className="bg-[#006400] text-white p-3.5 flex items-center justify-between">
+          <div className="bg-[#8B6508] text-white p-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
               <div>
-                <h4 className="text-xs font-bold font-mono">Aschalew WhatsApp Assistant</h4>
-                <p className="text-[9px] text-emerald-100 font-mono">On-duty Concierge Desk • Online</p>
+                <h4 className="text-xs font-bold font-mono">System Chat Channel</h4>
+                <p className="text-[9px] text-amber-100 font-mono">Shared Message Board • Active</p>
               </div>
             </div>
             <Coffee className="w-4 h-4 text-[#D4AF37]" />
           </div>
 
           {/* Messages Body */}
-          <div className="flex-grow p-4 overflow-y-auto space-y-3.5 scrollbar-thin text-xs">
-            {chatMessages.map((msg) => (
-              <div 
-                key={msg.id}
-                className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'}`}
-              >
-                <div className={`p-3 rounded-2xl leading-normal ${
-                  msg.sender === 'user' 
-                    ? 'bg-[#006400] text-white rounded-br-none' 
-                    : `${isDarkMode ? 'bg-zinc-950 text-zinc-200' : 'bg-stone-100 text-stone-800'} rounded-bl-none`
-                }`}>
-                  <p>{msg.text}</p>
+          <div className="flex-grow p-4 overflow-y-auto space-y-3.5 scrollbar-thin text-xs bg-zinc-950/10">
+            {chatMessages.map((msg) => {
+              const isSystem = msg.senderRole === 'system';
+              const isMe = msg.senderEmail === 'visitor@aschalewhotel.com';
+              const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+              
+              return (
+                <div 
+                  key={msg.id}
+                  className={`flex flex-col max-w-[85%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+                >
+                  {!isMe && (
+                    <span className="text-[9px] font-bold font-mono text-zinc-500 mb-0.5 px-1 uppercase tracking-wider">
+                      {msg.senderName} ({msg.senderRole})
+                    </span>
+                  )}
+                  <div className={`p-3 rounded-2xl leading-normal ${
+                    isMe 
+                      ? 'bg-amber-500 text-zinc-950 font-semibold rounded-br-none font-mono text-[11px]' 
+                      : `${isDarkMode ? 'bg-zinc-950 text-zinc-200' : 'bg-stone-100 text-stone-800'} border border-zinc-800/50 rounded-bl-none font-mono text-[11px]`
+                  }`}>
+                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                  <span className="text-[8px] text-zinc-500 font-mono mt-1 px-1">{timeStr}</span>
                 </div>
-                <span className="text-[8px] text-zinc-500 font-mono mt-1 px-1">{msg.time}</span>
-              </div>
-            ))}
+              );
+            })}
 
             {isTyping && (
               <div className="flex items-center gap-1.5 p-2 bg-zinc-950/40 rounded-xl w-16 mr-auto text-zinc-500">
@@ -992,7 +1075,7 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
             />
             <button 
               type="submit"
-              className="p-2 bg-[#006400] hover:bg-emerald-800 text-white rounded-xl transition cursor-pointer"
+              className="p-2 bg-[#8B6508] hover:bg-amber-700 text-white rounded-xl transition cursor-pointer"
             >
               <Send className="w-4 h-4" />
             </button>
@@ -1103,9 +1186,34 @@ export default function AuthScreen({ onAuthSuccess, isLoading, setIsLoading, roo
 
               {/* Error alerts */}
               {error && (
-                <div className="p-3 mb-5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex gap-2 items-start">
-                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                <div className="p-4 mb-5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex flex-col gap-2.5 items-start">
+                  <div className="flex gap-2 items-start">
+                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">{error}</span>
+                  </div>
+                  {error.includes('Authentication is not enabled') && (
+                    <div className="pt-2 border-t border-red-500/20 w-full">
+                      <p className="text-[10px] font-bold text-zinc-300 mb-2 font-mono uppercase tracking-wider">
+                        ⚡ Or bypass setup &amp; enter instantly:
+                      </p>
+                      <div className="flex gap-2.5 w-full">
+                        <button
+                          type="button"
+                          onClick={() => handleDemoSignIn('guest')}
+                          className="flex-1 py-1.5 px-3 rounded-lg bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold font-mono text-[10px] uppercase transition cursor-pointer"
+                        >
+                          Demo Guest Hub
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDemoSignIn('admin')}
+                          className="flex-1 py-1.5 px-3 rounded-lg bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold font-mono text-[10px] uppercase transition cursor-pointer"
+                        >
+                          Demo Staff PMS
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
